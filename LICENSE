@@ -1,0 +1,8 @@
+License: TBD
+
+License choice is deferred to Unit 8.3 (release decision), to be made with
+experimental results in hand. Per the project plan the intent is fully
+open — code and weights — but the specific license (MIT / Apache 2.0 /
+something more restrictive on the trained checkpoint) is unsettled.
+
+Until then, treat this code as "all rights reserved" by default.
