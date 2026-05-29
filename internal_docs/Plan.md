@@ -57,7 +57,7 @@ drift/
       behavior.py                      # Behavior dataclass: name + judge + scenario_loader + reward_cfg
     env/
       dialogue.py                      # N-turn loop; pure function over (attacker, target, scenario)
-      logging.py                       # JSONL rollout persistence
+      rollout_log.py                   # JSONL rollout persistence (avoids stdlib `logging` shadow)
       targets/
         base.py                        # Target protocol (re-exports from core)
         local_vllm.py                  # local open-weight via vLLM
@@ -165,7 +165,7 @@ Goal: any attacker can talk to any target for N turns and produce a persisted JS
 - **1.1 Target adapters: local.** `env/targets/local_vllm.py` implementing `Target` against a local vLLM server. Smoke test against one model (e.g., Qwen 2.5 7B). Review: protocol conformance; metadata captured (tokens, latency). Commit: `feat(env): local vLLM target adapter`.
 - **1.2 Target adapters: API.** `env/targets/{api_anthropic,api_openai,api_google}.py`. Same `Target` interface. Auth via env vars only. Review: one adapter per provider works against a real call; rate-limit handling sane. Commit: `feat(env): API target adapters (Anthropic, OpenAI, Google)`.
 - **1.3 Dialogue loop.** `env/dialogue.py` — pure function: `run_dialogue(attacker, target, scenario, max_turns) -> Rollout`. No behavior-specific logic. Review: the loop is genuinely behavior-agnostic; max_turns and termination conditions are parameters. Commit: `feat(env): N-turn dialogue loop`.
-- **1.4 Rollout logging.** `env/logging.py` — JSONL persistence with versioned run dirs under `data/logs/<run_id>/`. Resumable: given a run_id, can list completed scenarios. Review: log schema captures everything needed for later judge replay. Commit: `feat(env): rollout JSONL logging`.
+- **1.4 Rollout logging.** `env/rollout_log.py` — JSONL persistence with versioned run dirs under `data/logs/<run_id>/`. Resumable: given a run_id, can list completed scenarios. Review: log schema captures everything needed for later judge replay. Commit: `feat(env): rollout JSONL logging`.
 - **1.5 Smoke script.** `scripts/smoke_dialogue.py` — runs a hand-crafted attacker prompt against one local + one API target, persists logs. Review: end-to-end in <2 min, log file inspectable. Commit: `chore: phase-1 smoke script`. **Push at end of phase.**
 
 **Exit criterion**: `python scripts/smoke_dialogue.py` runs end-to-end against one local + one API target, persisted log validates against the rollout schema.
