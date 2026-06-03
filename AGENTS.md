@@ -51,6 +51,16 @@ than monkey-patch.
   without it.
 - **Commit per approved unit.** Plan lists the exact commit message for
   each unit. Don't bundle. Push after every commit.
+- **Protocol implementations set `name` as a class attribute.** For Target,
+  Attacker, and Judge, write `class Foo: name = "foo"` (class attribute),
+  not `self.name = "foo"` in `__init__`. This keeps the registered class
+  itself protocol-conformant under `isinstance(cls, Target)`.
+- **Two registration patterns.** Classes (Target/Judge/Baseline) use the
+  decorator form `@TARGETS.register("name")`. Behavior instances use the
+  helper form `register_behavior(behavior_instance)` which reads `.name`
+  from the instance. The asymmetry reflects that behaviors are
+  already-populated data, while targets/judges/baselines are classes
+  awaiting per-run instantiation.
 
 ## Where to look
 

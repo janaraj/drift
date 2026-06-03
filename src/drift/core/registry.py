@@ -85,9 +85,10 @@ class Registry(Generic[T]):
 # -----------------------------------------------------------------------------
 # Singletons — four registries per plan
 # -----------------------------------------------------------------------------
-# Stored as Registry[Any] at runtime to avoid forward-ref circularity with
-# protocols/behavior modules; the type comment documents intent for readers and
-# type checkers can narrow at use sites.
+# Generic parameters are erased at runtime; the annotations below exist for
+# static type checkers (pyright/mypy) and are stringified via
+# `from __future__ import annotations` so the forward references to Target /
+# Judge / Attacker / Behavior do not require runtime imports.
 
 TARGETS: Registry[type[Target]] = Registry("target")
 JUDGES: Registry[type[Judge]] = Registry("judge")

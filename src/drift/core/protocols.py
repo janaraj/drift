@@ -31,10 +31,20 @@ Role = Literal["system", "user", "assistant"]
 
 @dataclass(frozen=True, slots=True)
 class Message:
-    """One chat-format message. role ∈ {system, user, assistant}."""
+    """One chat-format message. role ∈ {system, user, assistant}.
+
+    The Literal type on `role` is enforced at construction via __post_init__
+    because dataclasses don't validate type annotations at runtime.
+    """
 
     role: Role
     content: str
+
+    def __post_init__(self) -> None:
+        if self.role not in ("system", "user", "assistant"):
+            raise ValueError(
+                f"Message.role must be one of system/user/assistant, got {self.role!r}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +70,11 @@ class AssistantTurn:
 
 class Scenario(BaseModel):
     """Common scenario schema. Behavior-specific data lives in behavior_config.
+
+    Note: `frozen=True` prevents attribute reassignment (s.id = ...) but does
+    NOT deep-freeze nested mutable types — `behavior_config` and `metadata`
+    are dicts and can be mutated in place. Treat them as read-only by
+    convention; do not mutate after load.
 
     Example (E):
         Scenario(
@@ -104,6 +119,10 @@ class Rollout:
     `turns` includes the target's system prompt as turn 0 (role="system"),
     then alternating user (attacker) / assistant (target) messages.
     `target_metadata` has one entry per assistant turn in `turns`.
+
+    The length invariant (len(target_metadata) == #assistant turns) is
+    enforced at construction via __post_init__ so a buggy dialogue loop
+    can't produce a malformed Rollout that breaks downstream indexing.
     """
 
     scenario_id: str
@@ -113,6 +132,14 @@ class Rollout:
     turns: tuple[Message, ...]
     target_metadata: tuple[TurnMetadata, ...]
     terminated_reason: TerminationReason
+
+    def __post_init__(self) -> None:
+        assistant_count = sum(1 for t in self.turns if t.role == "assistant")
+        if len(self.target_metadata) != assistant_count:
+            raise ValueError(
+                f"Rollout.target_metadata length ({len(self.target_metadata)}) "
+                f"must equal number of assistant turns ({assistant_count})"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +167,13 @@ class Target(Protocol):
 
     Implementations are stateless across calls — the caller (dialogue loop)
     owns conversation history and passes the full message list each call.
+
+    Convention: implementations should set `name` as a **class attribute**, not
+    just `self.name` in `__init__`. With a class attribute, both `isinstance(cls,
+    Target)` and `isinstance(cls(), Target)` succeed; with only instance
+    assignment, only the latter works. The plug-in contract test (Unit 0.3)
+    checks instances, but class-attribute names keep the registry-stored class
+    itself protocol-conformant.
     """
 
     name: str
@@ -163,6 +197,9 @@ class Attacker(Protocol):
 
     Used by both trained specialists (loaded from checkpoint paths) and baselines
     (registered in BASELINES).
+
+    Convention: implementations should set `name` as a **class attribute** (see
+    Target docstring for the rationale).
     """
 
     name: str
@@ -178,6 +215,9 @@ class Judge(Protocol):
 
     Runs post-dialogue, sees the scenario (and therefore the secret/persona it's
     judging against). Pure function — no side effects, no state across calls.
+
+    Convention: implementations should set `name` as a **class attribute** (see
+    Target docstring for the rationale).
     """
 
     name: str

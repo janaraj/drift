@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "TBD" }  # pending Unit 8.3 release decision
 dependencies = [
-    "pydantic>=2.0",
+    "pydantic>=2.0,<3.0",
 ]
 
 [project.optional-dependencies]
