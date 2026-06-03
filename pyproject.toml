@@ -5,7 +5,9 @@ description = "A study of conversational manipulation in language models."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "TBD" }  # pending Unit 8.3 release decision
-dependencies = []
+dependencies = [
+    "pydantic>=2.0",
+]
 
 [project.optional-dependencies]
 dev = [
