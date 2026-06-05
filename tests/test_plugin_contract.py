@@ -139,6 +139,12 @@ def test_judge_satisfies_protocol():
     # Protocols are designed for instances; the class-attribute `name`
     # convention exists so isinstance-on-class works when needed, but the
     # standard test surface is instances.)
+    #
+    # LIMITATION: @runtime_checkable only verifies attribute PRESENCE, not
+    # method signatures. A judge with `def score(self):` (wrong arity) would
+    # still pass this isinstance check. Real judges (Units 2.2, 7.1) are
+    # protected by their own unit tests (2.3, 7.2) that actually CALL
+    # score(rollout, scenario) — that's where signature errors get caught.
 
 
 def test_judge_runs_against_constructed_rollout():
