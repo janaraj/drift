@@ -60,7 +60,8 @@ drift/
       rollout_log.py                   # JSONL rollout persistence (avoids stdlib `logging` shadow)
       targets/
         base.py                        # Target protocol (re-exports from core)
-        local_vllm.py                  # local open-weight via vLLM
+        local_mlx.py                   # local open-weight via MLX (Apple Silicon dev)
+        cloud_vllm.py                  # open-weight via vLLM (CUDA cloud; training rollouts)
         api_anthropic.py
         api_openai.py
         api_google.py
@@ -120,16 +121,18 @@ If a new behavior would force changes to env/training/eval code, that's a design
 
 - **Python 3.11**, `uv` for env mgmt.
 - **PyTorch + transformers + accelerate** for SFT.
-- **vLLM** for local target serving (fast multi-turn rollouts).
-- **TRL** for GRPO as default; **OpenRLHF** or **verl** as fallback if TRL's GRPO support proves immature for multi-turn dialogue rollouts. Decide concretely after a small TRL spike in Phase 0.
+- **Target serving is backend-split** (the `Target` protocol abstracts over both):
+  - **Local dev (Apple Silicon M4 Pro)**: **MLX / mlx-lm** for serving quantized targets. vLLM does NOT run on Metal, so it is not a local option.
+  - **Cloud (CUDA)**: **vLLM** for fast training-rollout serving.
+- **TRL (v1.0+) for GRPO — confirmed viable** (Unit 0.4 research). Multi-turn is supported natively via `GRPOTrainer`'s `rollout_func`, which lets us own the attacker↔target loop (matches `env/dialogue.py` + the Attacker/Target protocols). The tool-calling-shaped `environment_factory` path is a worse fit for conversational attacks. OpenRLHF/verl are no longer needed as fallbacks. Note: TRL's fast generation path uses vLLM, so real GRPO training runs on cloud CUDA.
 - **Anthropic / OpenAI / Google** Python SDKs for API targets, behind a unified adapter.
 - **Hydra** or simple YAML+pydantic for config.
 - **Weights & Biases** for run tracking (free tier).
 
 ### Compute
 
-- **Local dev**: whichever GPU(s) you have. Used for env work, judge dev, scenario authoring, sanity-checking small SFT runs, smoke-testing rollouts against one local target.
-- **Cloud**: rented for (a) full SFT runs, (b) GRPO loop, (c) target-zoo rollouts at scale, (d) closed-model eval sweeps. Lambda / RunPod / Modal are the three usual candidates; pick one in Phase 0 and stick with it.
+- **Local dev**: Apple **M4 Pro** — 20-core GPU, 24 GB unified memory, Metal 4. PyTorch MPS backend works (confirmed Unit 0.4). Used for env work, judge dev, scenario authoring, sanity SFT runs, and smoke-testing rollouts against a local MLX-served target (4-bit 7-8B fits comfortably). Cannot run vLLM (no Metal support) or CUDA-only accelerators (bitsandbytes, flash-attention).
+- **Cloud (CUDA)**: rented for (a) full SFT runs, (b) the GRPO loop (TRL + vLLM), (c) target-zoo rollouts at scale, (d) closed-model eval sweeps. Lambda / RunPod / Modal are the candidates; pick one in Phase 0 (deferred — see Unit 0.4) and stick with it.
 - **API budget cap** for eval: set a soft cap in Phase 0 (e.g., $X per eval sweep) and size the eval suite to fit.
 
 ### Base attacker model
@@ -152,7 +155,12 @@ Goal: lock toolchain, prove the boring pieces work end-to-end before any researc
 - **0.1 Repo scaffold.** `pyproject.toml`, `src/drift/` package skeleton (empty modules matching the layout above, with docstrings), `tests/` with one passing dummy test, `ruff` + `pytest` config, `.gitignore`, README stub. Review: layout matches plan, lint+test green. Commit: `chore: initial repo scaffold`.
 - **0.2 Core protocols.** `src/drift/core/{protocols,registry,behavior}.py` only — the abstract `Target`, `Judge`, `Scenario`, `Rollout`, `Baseline`, `Behavior` types and the decorator-based registry. No implementations. Review: type signatures match the plug-in contract; new behaviors really only need to touch the three extension points. Commit: `feat(core): protocols and plug-in registry`.
 - **0.3 Plug-in contract test.** `tests/test_plugin_contract.py` that registers a dummy throwaway behavior (trivial judge that returns True on any dialogue containing "X", trivial scenarios) and asserts the registries surface it without any other code change. Fails today (no env/training yet), but the *registration* path must work. Review: this test is the tripwire — does it actually catch a layering violation? Commit: `test(core): plug-in contract test for behaviors`.
-- **0.4 Toolchain spikes.** Three throwaway scripts under `spikes/` (gitignored after merge): TRL GRPO hello-world, vLLM local serving hello-world, cloud provider hello-world training job. Each runs in isolation, prints success. Review: do these prove TRL's GRPO supports our multi-turn dialogue rollout shape? If not, switch to OpenRLHF before going further. Commit: `chore(spikes): toolchain validation scripts`.
+- **0.4 Toolchain spikes.** Scoped to what the M4 Pro can validate locally (no CUDA box yet):
+  - **TRL multi-turn question — ANSWERED by research** (`docs/spike_findings.md`): TRL v1.0+ `GRPOTrainer.rollout_func` natively supports our attacker↔target multi-turn shape; no switch to OpenRLHF/verl needed.
+  - `spikes/spike_trl_grpo.py` — local MPS GRPO smoke (tiny model, transformers generation, no vLLM) confirming TRL installs and the API runs on Apple Silicon.
+  - `spikes/spike_mlx_serve.py` — MLX local serving smoke, proving the dialogue env can have real local targets on the Mac.
+  - **Deferred to cloud (re-entry: when a CUDA box is provisioned)**: vLLM serving spike and cloud-provider training hello-world. Both are CUDA-only and gated on the cloud-provider decision (itself deferred — see 0.6).
+  Commit: `chore(spikes): toolchain validation scripts`.
 - **0.5 Base-model A/B spike.** Run a 200-example identical prompt set through Qwen 2.5 0.5B and SmolLM2-360M; record outputs side-by-side. Review: eyeball both, pick one. Commit: `chore(spikes): base attacker model A/B comparison`.
 - **0.6 Decisions doc.** `docs/decisions.md` recording locked choices: base model, RL framework, cloud provider, API eval budget cap. Review: anything missing? Commit: `docs: lock phase-0 decisions`. **Push at end of phase.**
 
@@ -162,7 +170,7 @@ Goal: lock toolchain, prove the boring pieces work end-to-end before any researc
 
 Goal: any attacker can talk to any target for N turns and produce a persisted JSONL log.
 
-- **1.1 Target adapters: local.** `env/targets/local_vllm.py` implementing `Target` against a local vLLM server. Smoke test against one model (e.g., Qwen 2.5 7B). Review: protocol conformance; metadata captured (tokens, latency). Commit: `feat(env): local vLLM target adapter`.
+- **1.1 Target adapters: local.** `env/targets/local_mlx.py` implementing `Target` via MLX/mlx-lm (Apple Silicon dev). Smoke test against one model (e.g., a 4-bit Qwen 2.5 7B). A `cloud_vllm.py` adapter (same `Target` interface, CUDA) lands when a cloud box exists. Review: protocol conformance; metadata captured (tokens, latency). Commit: `feat(env): local MLX target adapter`.
 - **1.2 Target adapters: API.** `env/targets/{api_anthropic,api_openai,api_google}.py`. Same `Target` interface. Auth via env vars only. Review: one adapter per provider works against a real call; rate-limit handling sane. Commit: `feat(env): API target adapters (Anthropic, OpenAI, Google)`.
 - **1.3 Dialogue loop.** `env/dialogue.py` — pure function: `run_dialogue(attacker, target, scenario, max_turns) -> Rollout`. No behavior-specific logic. Review: the loop is genuinely behavior-agnostic; max_turns and termination conditions are parameters. Commit: `feat(env): N-turn dialogue loop`.
 - **1.4 Rollout logging.** `env/rollout_log.py` — JSONL persistence with versioned run dirs under `data/logs/<run_id>/`. Resumable: given a run_id, can list completed scenarios. Review: log schema captures everything needed for later judge replay. Commit: `feat(env): rollout JSONL logging`.
