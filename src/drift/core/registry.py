@@ -6,12 +6,12 @@ Each registry is a name → object mapping. Targets, judges, and baselines store
 
 Usage:
 
-    @TARGETS.register("local_vllm")
-    class LocalVLLMTarget:
-        name = "local_vllm"
+    @TARGETS.register("local_mlx")
+    class LocalMLXTarget:
+        name = "local_mlx"
         async def chat(self, messages): ...
 
-    target_cls = TARGETS.get("local_vllm")
+    target_cls = TARGETS.get("local_mlx")
     target = target_cls(model="qwen2.5-7b")
 
 Duplicate registration raises ValueError. Tests that need to re-register can

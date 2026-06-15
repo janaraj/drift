@@ -34,6 +34,5 @@ wandb/
 *.key
 *.pem
 
-# Note: spikes/ is NOT gitignored here. Per plan Unit 0.4, throwaway spike
-# scripts are committed for reviewability, then removed and gitignored after
-# the unit lands.
+# Note: spikes/ is NOT gitignored. Spike scripts are kept as small,
+# reproducible toolchain validation, referenced from docs/spike_findings.md.

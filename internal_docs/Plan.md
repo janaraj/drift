@@ -160,6 +160,7 @@ Goal: lock toolchain, prove the boring pieces work end-to-end before any researc
   - `spikes/spike_trl_grpo.py` — local MPS GRPO smoke (tiny model, transformers generation, no vLLM) confirming TRL installs and the API runs on Apple Silicon.
   - `spikes/spike_mlx_serve.py` — MLX local serving smoke, proving the dialogue env can have real local targets on the Mac.
   - **Deferred to cloud (re-entry: when a CUDA box is provisioned)**: vLLM serving spike and cloud-provider training hello-world. Both are CUDA-only and gated on the cloud-provider decision (itself deferred — see 0.6).
+  - Spike scripts are **kept** (not removed post-merge) as small reproducible validation, referenced from `docs/spike_findings.md`.
   Commit: `chore(spikes): toolchain validation scripts`.
 - **0.5 Base-model A/B spike.** Run a 200-example identical prompt set through Qwen 2.5 0.5B and SmolLM2-360M; record outputs side-by-side. Review: eyeball both, pick one. Commit: `chore(spikes): base attacker model A/B comparison`.
 - **0.6 Decisions doc.** `docs/decisions.md` recording locked choices: base model, RL framework, cloud provider, API eval budget cap. Review: anything missing? Commit: `docs: lock phase-0 decisions`. **Push at end of phase.**
