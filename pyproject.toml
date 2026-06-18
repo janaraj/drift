@@ -19,6 +19,19 @@ dev = [
 local = [
     "mlx-lm>=0.31,<1.0",  # make_sampler/generate kwargs have churned; pin a range
 ]
+# API target adapters (eval-time). Per-provider so you install only what you use.
+anthropic = [
+    "anthropic>=0.40,<1.0",
+]
+openai = [
+    "openai>=2.0,<3.0",
+]
+google = [
+    "google-genai>=2.0,<3.0",
+]
+api = [
+    "drift[anthropic,openai,google]",  # convenience: all three providers
+]
 
 [build-system]
 requires = ["hatchling"]

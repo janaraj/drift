@@ -4,4 +4,11 @@ Imports here register each adapter in the target registry. Adding a new
 target means dropping a new module beside the existing ones and importing it.
 """
 
-from drift.env.targets import local_mlx  # noqa: F401  (import for registration side effect)
+# Imports for registration side effects. All adapters use lazy SDK imports, so
+# importing them here does not require any backend/SDK to be installed.
+from drift.env.targets import (  # noqa: F401
+    api_anthropic,
+    api_google,
+    api_openai,
+    local_mlx,
+)
