@@ -3,3 +3,5 @@
 Imports here register each adapter in the target registry. Adding a new
 target means dropping a new module beside the existing ones and importing it.
 """
+
+from drift.env.targets import local_mlx  # noqa: F401  (import for registration side effect)
