@@ -64,6 +64,7 @@ class OpenAITarget:
         resp = await client.chat.completions.create(
             model=self.model_id,
             messages=self._to_openai(messages),
+            # NOTE: o-series reasoning models need max_completion_tokens, not max_tokens.
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             top_p=self.top_p,

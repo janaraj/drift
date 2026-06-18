@@ -35,6 +35,9 @@ class GoogleTarget:
         max_tokens: int = 1024,
         temperature: float = 0.0,
         top_p: float = 1.0,
+        thinking_budget: int = 0,
+        retry_attempts: int = 3,
+        timeout_ms: int = 120_000,
     ) -> None:
         self.model_id = model_id
         self.name = name or model_id
@@ -42,6 +45,17 @@ class GoogleTarget:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
+        # Gemini 2.5 models think by default, and thinking tokens are drawn from
+        # max_output_tokens — which can truncate or empty the visible answer.
+        # Default thinking_budget=0 disables thinking so max_tokens applies fully
+        # to the response (predictable target behavior). Raise it to allow
+        # thinking (note: some models, e.g. 2.5-pro, may not accept 0).
+        self.thinking_budget = thinking_budget
+        # google-genai does NOT retry by default (unlike the anthropic/openai
+        # SDKs). Enable retries + a bounded timeout so a 429 mid eval-sweep
+        # doesn't crash the rollout.
+        self.retry_attempts = retry_attempts
+        self.timeout_ms = timeout_ms
         self._client = None
 
     @staticmethod
@@ -64,13 +78,18 @@ class GoogleTarget:
     def _ensure_client(self):
         if self._client is None:
             from google import genai
+            from google.genai import types
 
             key = (
                 self.api_key
                 or os.environ.get("GEMINI_API_KEY")
                 or os.environ.get("GOOGLE_API_KEY")
             )
-            self._client = genai.Client(api_key=key)
+            http_options = types.HttpOptions(
+                timeout=self.timeout_ms,
+                retry_options=types.HttpRetryOptions(attempts=self.retry_attempts),
+            )
+            self._client = genai.Client(api_key=key, http_options=http_options)
         return self._client
 
     async def chat(self, messages: list[Message]) -> AssistantTurn:
@@ -84,6 +103,7 @@ class GoogleTarget:
             temperature=self.temperature,
             top_p=self.top_p,
             max_output_tokens=self.max_tokens,
+            thinking_config=types.ThinkingConfig(thinking_budget=self.thinking_budget),
         )
 
         t0 = time.perf_counter()
@@ -94,11 +114,21 @@ class GoogleTarget:
 
         text = resp.text or ""
         usage = getattr(resp, "usage_metadata", None)
+        # Capture why a response may be empty/blocked (adversarial setting): the
+        # first candidate's finish_reason and any prompt-level block feedback.
+        candidates = getattr(resp, "candidates", None) or []
+        finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
         metadata = TurnMetadata(
             prompt_tokens=getattr(usage, "prompt_token_count", None),
             completion_tokens=getattr(usage, "candidates_token_count", None),
             latency_ms=latency_ms,
-            raw={"provider": "google", "model_id": self.model_id},
+            raw={
+                "provider": "google",
+                "model_id": self.model_id,
+                "finish_reason": str(finish_reason) if finish_reason is not None else None,
+                "prompt_feedback": str(getattr(resp, "prompt_feedback", None) or "") or None,
+                "thinking_budget": self.thinking_budget,
+            },
         )
         return AssistantTurn(
             message=Message(role="assistant", content=text.strip()),

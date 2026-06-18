@@ -77,8 +77,11 @@ class AnthropicTarget:
             "messages": convo,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
-            "top_p": self.top_p,
         }
+        # Anthropic recommends tuning temperature OR top_p, not both. Only forward
+        # top_p when it's been set to a non-default (active) value.
+        if self.top_p != 1.0:
+            kwargs["top_p"] = self.top_p
         if system is not None:
             kwargs["system"] = system
 
