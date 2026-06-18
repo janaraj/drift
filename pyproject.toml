@@ -17,7 +17,7 @@ dev = [
 # Apple Silicon local target serving. Mac-only; the CUDA cloud path uses a
 # separate `cloud` extra (added when the cloud target adapter lands).
 local = [
-    "mlx-lm",
+    "mlx-lm>=0.31,<1.0",  # make_sampler/generate kwargs have churned; pin a range
 ]
 
 [build-system]

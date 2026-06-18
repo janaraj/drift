@@ -8,11 +8,18 @@ mlx-lm is an optional dependency (install via the `local` extra:
 `uv pip install -e ".[local]"`). All mlx imports are lazy and live inside
 methods, so this module imports fine on non-Apple platforms / CI — only
 generation actually requires mlx-lm.
+
+Concurrency note: this adapter is intended for serial, single-dialogue dev use.
+The lazy model load is guarded by a lock so concurrent chat() calls don't load
+the model more than once, but MLX generation on a shared model from multiple
+threads is not guaranteed safe — concurrent training rollouts use the cloud
+vLLM adapter, not this one.
 """
 
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 
 from drift.core.protocols import AssistantTurn, Message, TurnMetadata
@@ -52,6 +59,7 @@ class LocalMLXTarget:
         self.seed = seed
         self._model = None
         self._tokenizer = None
+        self._load_lock = threading.Lock()
 
     @staticmethod
     def _to_mlx_messages(messages: list[Message]) -> list[dict[str, str]]:
@@ -59,13 +67,25 @@ class LocalMLXTarget:
         return [{"role": m.role, "content": m.content} for m in messages]
 
     def _ensure_loaded(self) -> None:
-        if self._model is None:
-            from mlx_lm import load  # lazy: only needed at generation time
+        # Double-checked locking: concurrent chat() calls (each in its own
+        # asyncio.to_thread thread) must not load the model more than once.
+        if self._model is not None:
+            return
+        with self._load_lock:
+            if self._model is None:
+                from mlx_lm import load  # lazy: only needed at generation time
 
-            self._model, self._tokenizer = load(self.model_id)
+                self._model, self._tokenizer = load(self.model_id)
 
     def _chat_sync(self, messages: list[Message]) -> AssistantTurn:
-        """Synchronous generation. Run off the event loop via asyncio.to_thread."""
+        """Synchronous generation. Run off the event loop via asyncio.to_thread.
+
+        Note on `seed`: when set, it is re-applied before every call, so identical
+        inputs always produce identical outputs (good for reproducible eval, no
+        per-call variation). Leave seed=None for stochastic generation.
+
+        The returned message content is stripped of surrounding whitespace.
+        """
         import mlx.core as mx
         from mlx_lm import generate
         from mlx_lm.sample_utils import make_sampler
@@ -91,11 +111,18 @@ class LocalMLXTarget:
         )
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
+        # Token counts are approximate: re-encoding the decoded text is not
+        # guaranteed to equal the generated token count (BPE boundary effects).
+        # Adequate for telemetry; do not use for exact billing/length math.
         metadata = TurnMetadata(
             prompt_tokens=len(self._tokenizer.encode(prompt)),
             completion_tokens=len(self._tokenizer.encode(text)),
             latency_ms=latency_ms,
-            raw={"model_id": self.model_id, "temperature": self.temperature},
+            raw={
+                "model_id": self.model_id,
+                "temperature": self.temperature,
+                "token_counts_approx": True,
+            },
         )
         return AssistantTurn(
             message=Message(role="assistant", content=text.strip()),
