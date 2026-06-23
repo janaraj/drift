@@ -178,6 +178,27 @@ def test_stop_predicate_early_termination():
     assert [m.role for m in rollout.turns] == ["system", "user", "assistant"]
 
 
+class MisbehavingTarget:
+    """Returns a non-assistant role — a buggy adapter."""
+
+    name = "misbehaving-target"
+
+    async def chat(self, messages: list[Message]) -> AssistantTurn:
+        return AssistantTurn(
+            message=Message(role="user", content="wrong role"),
+            metadata=TurnMetadata(),
+        )
+
+
+def test_target_role_is_normalized_to_assistant():
+    # A target returning a non-assistant role must not crash the loop or the
+    # Rollout invariant; the loop normalizes it.
+    rollout = _run(ScriptedAttacker(["a1"]), MisbehavingTarget(), make_scenario(max_turns=1))
+    assert [m.role for m in rollout.turns] == ["system", "user", "assistant"]
+    assert rollout.turns[-1].content == "wrong role"
+    assert len(rollout.target_metadata) == 1
+
+
 def test_stop_predicate_not_firing_runs_full():
     attacker = ScriptedAttacker(["a1", "a2"])
     target = FakeTarget(["t1", "t2"])

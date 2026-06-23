@@ -37,6 +37,7 @@ from drift.core.protocols import (
     Rollout,
     Scenario,
     Target,
+    TerminationReason,
     TurnMetadata,
 )
 
@@ -75,6 +76,7 @@ async def run_dialogue(
         stop_predicate: optional; called with the partial Rollout after each
             target turn. If it returns True, the dialogue stops early with
             terminated_reason="judge_success". Keeps the loop behavior-agnostic.
+            Must not raise — exceptions propagate and abort the dialogue.
 
     Termination:
         - "judge_success" if stop_predicate fires
@@ -89,7 +91,7 @@ async def run_dialogue(
     turns: list[Message] = [Message(role="system", content=scenario.system_prompt)]
     metadata: list[TurnMetadata] = []
 
-    def build(reason: str) -> Rollout:
+    def build(reason: TerminationReason) -> Rollout:
         return Rollout(
             scenario_id=scenario.id,
             behavior=scenario.behavior,
@@ -97,7 +99,7 @@ async def run_dialogue(
             target_name=target.name,
             turns=tuple(turns),
             target_metadata=tuple(metadata),
-            terminated_reason=reason,  # type: ignore[arg-type]
+            terminated_reason=reason,
         )
 
     for _ in range(n):
@@ -111,7 +113,10 @@ async def run_dialogue(
         except Exception:
             return build("target_error")
 
-        turns.append(response.message)
+        # Normalize to the assistant role (symmetric with the attacker->user
+        # normalization above), so a misbehaving adapter can't break the
+        # alternation or the Rollout invariant.
+        turns.append(Message(role="assistant", content=response.message.content))
         metadata.append(response.metadata)
 
         if stop_predicate is not None:
