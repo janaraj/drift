@@ -77,6 +77,18 @@ def rollout_from_dict(d: dict) -> Rollout:
     )
 
 
+def _validate_run_id(run_id: str) -> None:
+    """Reject run_ids that would escape or collapse the run directory.
+
+    run_id is interpolated into a filesystem path, so guard against empty values,
+    path separators, and parent refs even though it's normally our-code-controlled.
+    """
+    if not run_id or not run_id.strip():
+        raise ValueError("run_id must be a non-empty string")
+    if "/" in run_id or "\\" in run_id or run_id in (".", ".."):
+        raise ValueError(f"run_id must not contain path separators or be a path ref: {run_id!r}")
+
+
 def default_run_id(prefix: str = "run") -> str:
     """A timestamped run id, e.g. 'run-20260615T142233Z'. Convenience for scripts."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -96,6 +108,7 @@ class RolloutLogger:
     """
 
     def __init__(self, run_id: str, base_dir: str | Path = "data/logs") -> None:
+        _validate_run_id(run_id)
         self.run_id = run_id
         self.run_dir = Path(base_dir) / run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)

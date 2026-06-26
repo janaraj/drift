@@ -132,6 +132,20 @@ def test_malformed_line_is_skipped(tmp_path):
     assert len(logger.read_all()) == 1
 
 
+def test_rejects_unsafe_run_ids(tmp_path):
+    import pytest
+
+    for bad in ("", "   ", "a/b", "..", ".", "..\\x", "x/../y"):
+        with pytest.raises(ValueError):
+            RolloutLogger(bad, base_dir=tmp_path)
+
+
+def test_accepts_normal_run_ids(tmp_path):
+    for ok in ("run-20260615T010101Z", "eval_1", "my.run.2"):
+        logger = RolloutLogger(ok, base_dir=tmp_path)
+        assert logger.run_dir.exists()
+
+
 def test_default_run_id_shape():
     rid = default_run_id()
     assert rid.startswith("run-") and rid.endswith("Z")
